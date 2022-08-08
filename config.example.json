@@ -1,0 +1,10 @@
+{
+  "mastodon": {
+    "url": "",
+    "token": ""
+  },
+  "booru": {
+    "name": "safebooru",
+    "tags": []
+  }
+}
