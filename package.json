@@ -1,0 +1,19 @@
+{
+  "name": "mastodon-weeb-poster",
+  "version": "1.0.0",
+  "description": "A bot for Mastodon weeb posting",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JacenBoy/Mastodon-Weeb-Poster.git"
+  },
+  "author": "JacenBoy",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/JacenBoy/Mastodon-Weeb-Poster/issues"
+  },
+  "homepage": "https://github.com/JacenBoy/Mastodon-Weeb-Poster#readme"
+}
