@@ -1,7 +1,7 @@
 const fs = require("fs");
 const https = require("https");
 const Booru = require("booru");
-const {login} = require("masto");
+const {createRestAPIClient} = require("masto");
 
 const config = require("./config.json");
 
@@ -76,21 +76,15 @@ const findNewImage = async (postedHistory) => {
     // Download and post the image
     tempFile = `./tmp/${img.data.image}`;
     https.get(img.sampleUrl || img.fileUrl, res => res.pipe(fs.createWriteStream(tempFile)).on("finish", async () => {
-      let client;
-      try {
-        client = await login({
-          url: config.mastodon.url,
-          accessToken: config.mastodon.token
-        });
-      } catch (ex) {
-        console.error("Error logging into Mastodon:", ex.message);
-        return;
-      }
+      const client = createRestAPIClient({
+        url: config.mastodon.url,
+        accessToken: config.mastodon.token
+      });
 
       let attachment;
       try {
-        attachment = await client.mediaAttachments.create({
-          file: fs.createReadStream(tempFile),
+        attachment = await client.v2.media.create({
+          file: await fs.openAsBlob(tempFile),
           description: `${img.postView}`
         });
       } catch (ex) {
@@ -99,7 +93,7 @@ const findNewImage = async (postedHistory) => {
       }
 
       try {
-        await client.statuses.create({
+        await client.v1.statuses.create({
           status: `${img.postView}\n\n${config.mastodon.tags.map(tag => `#${tag.replace(/^#/, "")}`).join(" ")}`,
           visibility: "public",
           mediaIds: [attachment.id]

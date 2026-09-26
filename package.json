@@ -19,6 +19,6 @@
   "homepage": "https://github.com/JacenBoy/Mastodon-Weeb-Poster#readme",
   "dependencies": {
     "booru": "^2.6.2",
-    "masto": "^4.11.1"
+    "masto": "^8.0.0"
   }
 }
