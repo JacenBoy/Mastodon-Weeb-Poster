@@ -1,10 +1,16 @@
 {
   "mastodon": {
     "url": "",
-    "token": ""
+    "token": "",
+    "tags": []
   },
   "booru": {
     "name": "safebooru",
     "tags": []
+  },
+  "history": {
+    "limit": 10,
+    "file": "./history.json",
+    "retries": 5
   }
 }
