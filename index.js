@@ -5,6 +5,8 @@ const {createRestAPIClient} = require("masto");
 
 const config = require("./config.json");
 
+const wait = require("util").promisify(setTimeout);
+
 // Load or create the history file
 const loadHistory = () => {
   try {
@@ -53,9 +55,34 @@ const findNewImage = async (postedHistory) => {
   throw new Error("Could not find a non-duplicate image after multiple attempts");
 };
 
+// Retry an async operation, waiting between failed attempts
+const withRetries = async (label, fn) => {
+  for (let attempt = 1; attempt <= config.history.retries; attempt++) {
+    try {
+      return await fn();
+    } catch (ex) {
+      console.error(`${label} failed, attempt ${attempt}/${config.history.retries}:`, ex.message);
+      if (attempt < config.history.retries) await wait(5000);
+    }
+  }
+  throw new Error(`${label} failed after ${config.history.retries} attempts`);
+};
+
+// Download a file to disk
+const download = (url, dest) => new Promise((resolve, reject) => {
+  https.get(url, res => {
+    if (res.statusCode !== 200) {
+      res.resume();
+      return reject(new Error(`Download failed with status ${res.statusCode}`));
+    }
+    res.pipe(fs.createWriteStream(dest))
+      .on("finish", resolve)
+      .on("error", reject);
+  }).on("error", reject);
+});
+
 (async () => {
   let postedHistory = loadHistory();
-  let img;
   let tempFile;
 
   try {
@@ -64,54 +91,49 @@ const findNewImage = async (postedHistory) => {
     }
 
     // Find a new, non-duplicate image
-    img = await findNewImage(postedHistory);
-    
-    // Update history
+    const img = await findNewImage(postedHistory);
+
+    // Download the image
+    tempFile = `./tmp/${img.data.image}`;
+    await download(img.sampleUrl || img.fileUrl, tempFile);
+
+    const client = createRestAPIClient({
+      url: config.mastodon.url,
+      accessToken: config.mastodon.token
+    });
+
+    const attachment = await withRetries("Uploading attachment", async () => client.v2.media.create({
+      file: await fs.openAsBlob(tempFile),
+      description: `${img.postView}`
+    }));
+
+    // The idempotency key stops Mastodon from creating a duplicate status if a
+    // retry follows a request that succeeded but whose response was lost
+    await withRetries("Posting to Mastodon", () => client.v1.statuses.create({
+      status: `${img.postView}
+
+${config.mastodon.tags.map(tag => `#${tag.replace(/^#/, "")}`).join(" ")}`,
+      visibility: "public",
+      mediaIds: [attachment.id]
+    }, {
+      requestInit: {headers: {"Idempotency-Key": `weeb-poster-${img.id}`}}
+    }));
+    console.log("Successfully posted new image:", img.id);
+
+    // Update history only once the image has actually been posted
     postedHistory.unshift(img.id);
     if (postedHistory.length > config.history.limit) {
       postedHistory = postedHistory.slice(0, config.history.limit);
     }
     saveHistory(postedHistory);
-
-    // Download and post the image
-    tempFile = `./tmp/${img.data.image}`;
-    https.get(img.sampleUrl || img.fileUrl, res => res.pipe(fs.createWriteStream(tempFile)).on("finish", async () => {
-      const client = createRestAPIClient({
-        url: config.mastodon.url,
-        accessToken: config.mastodon.token
-      });
-
-      let attachment;
-      try {
-        attachment = await client.v2.media.create({
-          file: await fs.openAsBlob(tempFile),
-          description: `${img.postView}`
-        });
-      } catch (ex) {
-        console.error("Error uploading attachment:", ex.message);
-        return;
-      }
-
-      try {
-        await client.v1.statuses.create({
-          status: `${img.postView}\n\n${config.mastodon.tags.map(tag => `#${tag.replace(/^#/, "")}`).join(" ")}`,
-          visibility: "public",
-          mediaIds: [attachment.id]
-        });
-        console.log("Successfully posted new image:", img.id);
-      } catch (ex) {
-        console.error("Error posting to Mastodon:", ex.message);
-      }
-
-      try {
-        fs.unlink(tempFile, (err) => {
-          if (err) console.error("Error deleting temp file:", err.message);
-        });
-      } catch (ex) {
-        console.error("Error cleaning up:", ex.message);
-      }
-    }));
   } catch (ex) {
     console.error("Error in main process:", ex.message);
+    process.exitCode = 1;
+  } finally {
+    if (tempFile) {
+      fs.unlink(tempFile, (err) => {
+        if (err && err.code !== "ENOENT") console.error("Error deleting temp file:", err.message);
+      });
+    }
   }
 })();
